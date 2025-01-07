@@ -30,7 +30,7 @@ Syntax() {
 }
 
 Usage() {
-	echo "Usage: printCoqAssumptions [OPTION] [--] [COQFILEs]"
+	echo "Usage: printCoqAssumptions [OPTION] [--] [PHYSICAL_DIR] [COQDIR] [COQFILE]..."
 }
 
 ExitStats() {
@@ -163,7 +163,7 @@ set +f
 IFS=$(echo -e " \n\t")
 
 # Get the short options
-while getopts "hcrdp:" opt; do
+while getopts "hcrdp:-" opt; do
 	case $opt in
 	h)
 		Help
@@ -193,6 +193,9 @@ while getopts "hcrdp:" opt; do
 			;;
 		esac
 		;;
+	-)
+		break
+		;;
 	\?)
 		err_msg "printCoqAssumptions: unrecognized option '-${OPTARG}'"
 		exit 1
@@ -203,6 +206,22 @@ shift $((OPTIND - 1))
 
 # Get the script directory
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+
+############################################################
+# Check the input arguments. Add checks as needed.         #
+############################################################
+# Input: Directory arguments (e.g., PHYSICAL_DIR, COQDIR)
+if [ $# -lt 2 ]; then
+	err_msg "printCoqAssumptions: missing directory operands"
+	exit 1
+fi
+PHYSICAL_DIR=$1
+COQDIR=$2
+if [ ! -d "$PHYSICAL_DIR" ]; then
+	err_msg "printCoqAssumptions: '$PHYSICAL_DIR' is not a directory"
+	exit 1
+fi
+shift 2
 
 # Input: Coq source file (e.g., MyFile.v)
 if [ $# -eq 0 ]; then
@@ -238,7 +257,7 @@ for arg in "$@"; do
 	# Step 2: Recompiling the Coq file
 	if [ "$RECOMPILE" = true ]; then
 		temp_file=$(mktemp)
-		coqc -Q . PLF "$arg" 1>/dev/null 2>"$temp_file" &
+		coqc -Q "$PHYSICAL_DIR" "$COQDIR" "$arg" 1>/dev/null 2>"$temp_file" &
 		show_spinner $! "$PRINT_LEVEL" "Recompiling $arg..." "$temp_file"
 	fi
 
@@ -247,7 +266,7 @@ for arg in "$@"; do
 	PRINTFILE="${arg/.v/}_check_assumptions.v"
 	if [ ! -f "$PRINTFILE" ]; then
 		temp_file=$(mktemp)
-		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" 2>"$temp_file" &
+		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" "$COQDIR" 2>"$temp_file" &
 		show_spinner $! "$PRINT_LEVEL" "Generating new assumption checking script for $COQFILE..." "$temp_file"
 	fi
 done
@@ -261,23 +280,24 @@ for arg in "$@"; do
 	echo -e "\e[1mChecking assumptions for $COQFILE...\e[0m"
 	temp_file=$(mktemp)
 	if [ "$PRINT_LEVEL" = "q" ]; then
-		coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
+		coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
 	elif [ "$PRINT_LEVEL" = "s" ]; then
-		output=$(coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file" | (sed -n ' /^-----------.*-----------$/ {
-																																								N
-																																								/Closed under the global context/ d
-																																								p
-																																								b
-																																							}
-																																							p
-																																						'))
+		output=$(coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file" | (
+			sed -n ' /^-----------.*-----------$/ {
+									N
+									/Closed under the global context/ d
+									p
+									b
+								}
+								p
+							'))
 		if [ -z "$output" ]; then
 			echo -e "[\e[1;32m✓\e[0m] Every theorem/lemma/example in $COQFILE is closed under the global context."
 		else
 			echo -e "$output"
 		fi
 	else
-		coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file"
+		coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file"
 	fi
 	if [ $? -ne 0 ]; then
 		echo -e "\e[1;31mError: There are some errors while processing:\e[0m" >&2
