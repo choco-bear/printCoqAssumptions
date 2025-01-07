@@ -1,0 +1,243 @@
+#!/bin/bash
+
+############################################################
+# Help                                                     #
+############################################################
+Syntax() {
+	# Display syntax
+	echo "Mandatory arguments to long options are mandatory for short options too."
+	echo "  -c, --clean                   Clean the check_assumptions file before"
+	echo "                                running the script. If you added some"
+	echo "                                theorems or lemmas to the file, you should"
+	echo "                                add this option."
+	echo "  -r, --recompile               Recompile the Coq file before running the"
+	echo "                                script. If you added some theorems or lemmas"
+	echo "                                to the file, you should add this option."
+	echo "  -d, --delete									Delete the check_assumptions file after"
+	echo "                                running the script. If you don't want to"
+	echo "                                keep the file, you should add this option."
+	echo "  -h, --help                    Display this help and exit."
+	echo
+}
+
+Usage() {
+	echo "Usage: printCoqAssumptions [OPTION] [--] [COQFILEs]"
+}
+
+ExitStats() {
+	# Display exit status
+	echo "Exit status:"
+	echo " 0  if OK,"
+	echo " 1  if there is an argument error"
+	echo " 2  if subcommand failed"
+	echo " 3  if there is an unexpected error"
+	echo
+}
+
+Help() {
+	# Display Help
+	Usage
+	echo "Print the assumptions of a Coq file."
+	echo
+	Syntax
+	echo
+	ExitStats
+}
+
+############################################################
+############################################################
+# Main program                                             #
+############################################################
+############################################################
+
+# Global variables
+CLEAN=false
+RECOMPILE=false
+DELETE=false
+
+# Helper functions
+err_msg() {
+	echo -e "\e[31m$1\e[0m" >&2
+	echo "Try printCoqAssumptions --help for more information." >&2
+}
+
+print_warning() {
+	echo -e "\e[1;33mWarning:  $1\e[0m" >&2
+}
+
+show_spinner() {
+	local pid=$1     # Process ID of the task to wait for
+	local message=$2 # Message to display
+	local delay=0.1
+	local spinner='|/-\' # Spinner characters
+	local temp_file=$3   # Temporary file to store error messages
+
+	while kill -0 "$pid" 2>/dev/null; do
+		for ((i = 0; i < ${#spinner}; i++)); do
+			printf "\r[%c] %s" "${spinner:i:1}" "$message"
+			sleep $delay
+		done
+	done
+
+	# Check if the process exited with an error
+	wait "$pid"
+	local exit_code=$?
+	if [ $exit_code -ne 0 ]; then
+		# If there are errors, display them in red
+		printf "\r[\033[1;31m✗\033[0m] \033[1;33m%s\033[0m\n" "$message"
+		echo -e "\e[1;31m    Error: There are some errors while processing:\e[0m" >&2
+		echo -e "\e[1;31m$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/           /')\e[0m" >&2
+		exit 2
+	fi
+	printf "\r[\033[1;32m✓\033[0m] %sDone!\n" "$message"
+	rm -f "$temp_file" # Clean up the temporary file
+}
+
+############################################################
+# Process the input options. Add options as needed.        #
+############################################################
+# Get the long options
+ARGS=""
+while true; do
+	[ $# -eq 0 ] && break
+	case $1 in
+	--help)
+		Help
+		exit 0
+		;;
+	--clean)
+		CLEAN=true
+		;;
+	--recompile)
+		RECOMPILE=true
+		;;
+	--delete)
+		DELETE=true
+		;;
+	--)
+		IFS=$(echo -e "\a")
+		ARGS=$ARGS$([ -n "$ARGS" ] && echo -e "\a")$*
+		break
+		;;
+	--*)
+		err_msg "printCoqAssumptions: unrecognized option '$1'"
+		exit 1
+		;;
+	esac
+
+	ARGS=$ARGS$([ -n "$ARGS" ] && echo -e "\a")$1
+	shift
+done
+IFS=$(echo -e "\a")
+set -f
+set -- $ARGS
+set +f
+IFS=$(echo -e " \n\t")
+
+# Get the short options
+while getopts "hcrd" opt; do
+	case $opt in
+	h)
+		Help
+		exit 0
+		;;
+	c)
+		CLEAN=true
+		;;
+	r)
+		RECOMPILE=true
+		;;
+	d)
+		DELETE=true
+		;;
+	\?)
+		err_msg "printCoqAssumptions: unrecognized option '-${OPTARG}'"
+		exit 1
+		;;
+	esac
+done
+shift $((OPTIND - 1))
+
+# Get the script directory
+SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+
+# Input: Coq source file (e.g., MyFile.v)
+if [ $# -eq 0 ]; then
+	err_msg "printCoqAssumptions: missing file operand"
+	exit 1
+fi
+for arg in "$@"; do
+	if [ -z "$arg" ]; then
+		err_msg "printCoqAssumptions: missing file operand"
+		exit 1
+	fi
+	if [ ! -f "$arg" ]; then
+		err_msg "printCoqAssumptions: '$arg' is not a file"
+		exit 1
+	fi
+	if [ "${arg##*.}" != "v" ]; then
+		err_msg "printCoqAssumptions: '$arg' is not a Coq file"
+		exit 1
+	fi
+done
+
+for arg in "$@"; do
+	# Step 1: If $CLEAN is true, clean the check_assumptions file
+	if [ "$CLEAN" = true ]; then
+		PRINTFILE="${arg/.v/}_check_assumptions.v"
+		if [ -f "$PRINTFILE" ]; then
+			temp_file=$(mktemp)
+			rm -f -- "$PRINTFILE" &
+			show_spinner $! "Cleaning $PRINTFILE..." "$temp_file"
+			sleep 0.2
+		fi
+	fi
+
+	# Step 2: Recompiling the Coq file
+	if [ "$RECOMPILE" = true ]; then
+		temp_file=$(mktemp)
+		coqc -Q . PLF "$arg" 1>/dev/null 2>"$temp_file" &
+		show_spinner $! "Recompiling $arg..." "$temp_file"
+	fi
+
+	# Step 3: If $PRINTFILE does not exist, create it
+	COQFILE=$arg
+	PRINTFILE="${arg/.v/}_check_assumptions.v"
+	if [ ! -f "$PRINTFILE" ]; then
+		temp_file=$(mktemp)
+		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" 2>"$temp_file" &
+		show_spinner $! "Generating new assumption checking script for $COQFILE..." "$temp_file"
+		sleep 0.5
+	fi
+done
+
+for arg in "$@"; do
+	COQFILE=$arg
+	PRINTFILE="${arg/.v/}_check_assumptions.v"
+
+	# Step 4: Run Coq on $PRINTFILE
+	echo
+	echo -e "\e[1mChecking assumptions for $COQFILE...\e[0m"
+	sleep 0.3
+	temp_file=$(mktemp)
+	coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file"
+	if [ $? -ne 0 ]; then
+		echo -e "\e[1;31mError: There are some errors while processing:\e[0m" >&2
+		echo -e "$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/       /')" >&2
+		rm -f -- "$temp_file"
+		exit 2
+	fi
+	rm -f -- "$temp_file"
+	echo
+
+	# Step 5: Remove the $PRINTFILE
+	if [ "$DELETE" = true ]; then
+		temp_file=$(mktemp)
+		rm -f -- "$PRINTFILE" "${PRINTFILE/.v/.vo}" "${PRINTFILE/.v/.glob}" "${PRINTFILE/.v/.vok}" "${PRINTFILE/.v/.vos}" &
+		show_spinner $! "Deleting assumption checking script and its auxiliary files for $COQFILE..." "$temp_file"
+		sleep 0.5
+	fi
+
+	echo -e "\e[1;32mDone!\e[0m"
+done
+exit 0
