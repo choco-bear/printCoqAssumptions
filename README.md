@@ -46,13 +46,16 @@ For more detail, run `printCoqAssumptions --help` or `printCoqAssumptions -h` an
 ```coq
 (* This is an example file *)
 Module Outer.
-  Theorem Thm1 : True. Proof. apply I. Qed.
+  Theorem Thm1 : True.
+  Proof. apply I. Qed.
   Module Inner.
-    Lemma Lem1 : False -> False. Proof. Admitted.
+    Lemma Lem1 : False -> False.
+    Proof. Admitted.
   End Inner.
 End Outer.
 
-Example Ex1 : True. Proof. apply I. Qed.
+Example Ex1 : True.
+Proof. apply I. Qed.
 ```
 
 ### Command:
