@@ -117,7 +117,7 @@ echo "Ltac PT A :=" >> "$OUTPUT"
 echo "   idtac \"-----------\" A \"-----------\"." >> "$OUTPUT"
 echo "Goal True." >> "$OUTPUT"
 while read -r theorem; do
-  echo "PT $theorem." >> "$OUTPUT"
+  echo "first [ PT $theorem | PT @$theorem ]." >> "$OUTPUT"
   echo "Print Assumptions $theorem." >> "$OUTPUT"
 done < "$temp_theorems"
 echo "Abort." >> "$OUTPUT"
