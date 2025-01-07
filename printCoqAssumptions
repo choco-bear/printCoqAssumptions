@@ -13,11 +13,11 @@ Syntax() {
 	echo "  -r, --recompile               Recompile the Coq file before running the"
 	echo "                                script. If you added some theorems or lemmas"
 	echo "                                to the file, you should add this option."
-	echo "  -d, --delete									Delete the check_assumptions file after"
+	echo "  -d, --delete                  Delete the check_assumptions file after"
 	echo "                                running the script. If you don't want to"
 	echo "                                keep the file, you should add this option."
-	echo "  -p, --print_level PRINT_LEVEL"
-	echo "																Set the level of the output. PRINT_LEVEL can"
+	echo "  -p, --print_level=PRINT_LEVEL"
+	echo "                                Set the level of the output. PRINT_LEVEL can"
 	echo "                                be one of the following:"
 	echo "                                  q: Quiet level. Prints nothing but errors."
 	echo "                                  s: Simplified level. Prints the assumptions"
@@ -163,7 +163,7 @@ set +f
 IFS=$(echo -e " \n\t")
 
 # Get the short options
-while getopts "hcrdp:-" opt; do
+while getopts "hcrdp:" opt; do
 	case $opt in
 	h)
 		Help
@@ -193,11 +193,8 @@ while getopts "hcrdp:-" opt; do
 			;;
 		esac
 		;;
-	-)
-		break
-		;;
 	\?)
-		err_msg "printCoqAssumptions: unrecognized option '-${OPTARG}'"
+		err_msg "printCoqAssumptions: invalid option"
 		exit 1
 		;;
 	esac
@@ -279,10 +276,14 @@ for arg in "$@"; do
 	echo
 	echo -e "\e[1mChecking assumptions for $COQFILE...\e[0m"
 	temp_file=$(mktemp)
+	ERRNO=0
 	if [ "$PRINT_LEVEL" = "q" ]; then
 		coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
+		ERRNO=$?
 	elif [ "$PRINT_LEVEL" = "s" ]; then
-		output=$(coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file" | (
+		output=$(coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file")
+		ERRNO=$?
+		output=$(echo -e "$output" | (
 			sed -n ' /^-----------.*-----------$/ {
 									N
 									/Closed under the global context/ d
@@ -298,8 +299,9 @@ for arg in "$@"; do
 		fi
 	else
 		coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file"
+		ERRNO=$?
 	fi
-	if [ $? -ne 0 ]; then
+	if [ $ERRNO -ne 0 ]; then
 		echo -e "\e[1;31mError: There are some errors while processing:\e[0m" >&2
 		echo -e "$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/       /')" >&2
 		rm -f -- "$temp_file"
