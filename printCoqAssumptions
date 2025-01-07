@@ -313,7 +313,7 @@ for arg in "$@"; do
 	# Step 5: Remove the $PRINTFILE
 	if [ "$DELETE" = true ]; then
 		temp_file=$(mktemp)
-		rm -f -- "$PRINTFILE" "${PRINTFILE/.v/.vo}" "${PRINTFILE/.v/.glob}" "${PRINTFILE/.v/.vok}" "${PRINTFILE/.v/.vos}" &
+		rm -f -- "$PRINTFILE" "${PRINTFILE/.v/.vo}" "${PRINTFILE/.v/.glob}" "${PRINTFILE/.v/.vok}" "${PRINTFILE/.v/.vos}" ".${PRINTFILE/.v/.aux}" &
 		show_spinner $! "$PRINT_LEVEL" "Deleting assumption checking script and its auxiliary files for $COQFILE..." "$temp_file"
 	fi
 
