@@ -66,8 +66,7 @@ COQDIR=$2
 
 # Step 1: Extract module names and their contexts
 module_stack=() # Stack to manage multi-level modules
-> temp_theorems.txt # Clear the temporary file
-
+temp_theorems=$(mktemp) # Clear the temporary file
 current_theorem=""
 theorem_open=false
 
@@ -77,29 +76,29 @@ if [ ! -f "$COQFILE" ]; then
 fi
 
 strip_comments < "$COQFILE" | while IFS= read -r line; do
-  if echo "$line" | grep -qE "^Module "; then
+  if echo "$line" | grep -qE "^[ \t]*Module "; then
     # Push module name onto the stack
-    module_name=$(echo "$line" | sed -E 's/^Module ([^ ]+).*/\1/')
+    module_name=$(echo "$line" | sed -E 's/^[ \t]*Module +([^ ]+).*/\1/')
     module_stack+=("$module_name")
-  elif echo "$line" | grep -qE "^End "; then
+  elif echo "$line" | grep -qE "^[ \t]*End "; then
     # Pop module name from the stack
     if [ ${#module_stack[@]} -gt 0 ]; then
       unset 'module_stack[-1]'
     else
       print_warning "'End' encountered without matching 'Module'."
     fi
-  elif echo "$line" | grep -qE "^(Theorem|Lemma|Example)"; then
+  elif echo "$line" | grep -qE "^[ \t]*(Theorem|Lemma|Example)"; then
     if $theorem_open; then
       print_warning "Theorem/lemma/example not closed properly: '$current_theorem'."
     fi
-    # Extract theorem or lemma name
-    current_theorem=$(echo "$line" | sed -E 's/^(Theorem|Lemma|Example) ([^:]+).*/\2/')
+    # Extract theorem/lemma/example name
+    current_theorem=$(echo "$line" | sed -E 's/^[ \t]*(Theorem|Lemma|Example) +([^ :]+).*/\2/')
     theorem_open=true
   elif $theorem_open && (echo "$line" | grep -qE "^.*[ \t]+(Qed|Admitted)[.][ \t]*$|^(Qed|Admitted)[.][ \t]*$"); then
     # If Qed. is found, finalize the theorem
     qualified_name=$(IFS=""; echo "${module_stack[*]}$current_theorem")
     qualified_name=${qualified_name#.} # Remove leading dot if no module
-    echo "$qualified_name" >> temp_theorems.txt
+    echo "$qualified_name" >> "$temp_theorems"
     theorem_open=false
   fi
 done
@@ -120,8 +119,8 @@ echo "Goal True." >> "$OUTPUT"
 while read -r theorem; do
   echo "PT $theorem." >> "$OUTPUT"
   echo "Print Assumptions $theorem." >> "$OUTPUT"
-done < temp_theorems.txt
+done < "$temp_theorems"
 echo "Abort." >> "$OUTPUT"
 
 # Step 3: Remove the temporary file
-rm temp_theorems.txt
+# rm -f -- "$temp_theorems"
