@@ -124,15 +124,23 @@ while true; do
 		;;
 	--clean)
 		CLEAN=true
+		shift
+		continue
 		;;
 	--recompile)
 		RECOMPILE=true
+		shift
+		continue
 		;;
 	--delete)
 		DELETE=true
+		shift
+		continue
 		;;
 	--print_level=d | --print_level=s | --print_level=q)
 		PRINT_LEVEL=${1#--print_level=} # Extract the argument
+		shift
+		continue
 		;;
 	--print_level=*)
 		err_msg "printCoqAssumptions: invalid argument '${1#--print_level=}' for option '--print_level'"
@@ -163,7 +171,7 @@ set +f
 IFS=$(echo -e " \n\t")
 
 # Get the short options
-while getopts "hcrdp:" opt; do
+while getopts ":hcrdp:" opt; do
 	case $opt in
 	h)
 		Help
@@ -193,8 +201,12 @@ while getopts "hcrdp:" opt; do
 			;;
 		esac
 		;;
+	:)
+		err_msg "printCoqAssumptions: option '-$OPTARG' requires an argument"
+		exit 1
+		;;
 	\?)
-		err_msg "printCoqAssumptions: invalid option"
+		err_msg "printCoqAssumptions: invalid option '-$OPTARG'"
 		exit 1
 		;;
 	esac
