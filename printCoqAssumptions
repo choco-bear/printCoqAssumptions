@@ -16,6 +16,15 @@ Syntax() {
 	echo "  -d, --delete									Delete the check_assumptions file after"
 	echo "                                running the script. If you don't want to"
 	echo "                                keep the file, you should add this option."
+	echo "  -p, --print_level PRINT_LEVEL"
+	echo "																Set the level of the output. PRINT_LEVEL can"
+	echo "                                be one of the following:"
+	echo "                                  q: Quiet level. Prints nothing but errors."
+	echo "                                  s: Simplified level. Prints the assumptions"
+	echo "                                     in a simplified form, i.e., does not print"
+	echo "                                     the assumptions closed under the global"
+	echo "                                     context."
+	echo "                                  d: Default level."
 	echo "  -h, --help                    Display this help and exit."
 	echo
 }
@@ -54,6 +63,7 @@ Help() {
 CLEAN=false
 RECOMPILE=false
 DELETE=false
+PRINT_LEVEL="d"
 
 # Helper functions
 err_msg() {
@@ -66,15 +76,18 @@ print_warning() {
 }
 
 show_spinner() {
-	local pid=$1     # Process ID of the task to wait for
-	local message=$2 # Message to display
+	local pid=$1         # Process ID of the task to wait for
+	local print_level=$2 # Print level
+	local message=$3     # Message to display
 	local delay=0.1
 	local spinner='|/-\' # Spinner characters
-	local temp_file=$3   # Temporary file to store error messages
+	local temp_file=$4   # Temporary file to store error messages
 
 	while kill -0 "$pid" 2>/dev/null; do
 		for ((i = 0; i < ${#spinner}; i++)); do
-			printf "\r[%c] %s" "${spinner:i:1}" "$message"
+			if [ "$print_level" != "q" ]; then
+				printf "\r[%c] %s" "${spinner:i:1}" "$message"
+			fi
 			sleep $delay
 		done
 	done
@@ -84,12 +97,16 @@ show_spinner() {
 	local exit_code=$?
 	if [ $exit_code -ne 0 ]; then
 		# If there are errors, display them in red
-		printf "\r[\033[1;31m✗\033[0m] \033[1;33m%s\033[0m\n" "$message"
+		if [ "$print_level" != "q" ]; then
+			printf "\r[\033[1;31m✗\033[0m] \033[1;33m%s\033[0m\n" "$message"
+		fi
 		echo -e "\e[1;31m    Error: There are some errors while processing:\e[0m" >&2
 		echo -e "\e[1;31m$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/           /')\e[0m" >&2
 		exit 2
 	fi
-	printf "\r[\033[1;32m✓\033[0m] %sDone!\n" "$message"
+	if [ "$print_level" != "q" ]; then
+		printf "\r[\033[1;32m✓\033[0m] %sDone!\n" "$message"
+	fi
 	rm -f "$temp_file" # Clean up the temporary file
 }
 
@@ -114,6 +131,17 @@ while true; do
 	--delete)
 		DELETE=true
 		;;
+	--print_level=d | --print_level=s | --print_level=q)
+		PRINT_LEVEL=${1#--print_level=} # Extract the argument
+		;;
+	--print_level=*)
+		err_msg "printCoqAssumptions: invalid argument '${1#--print_level=}' for option '--print_level'"
+		exit 1
+		;;
+	--print_level)
+		err_msg "printCoqAssumptions: option '--print_level' requires an argument"
+		exit 1
+		;;
 	--)
 		IFS=$(echo -e "\a")
 		ARGS=$ARGS$([ -n "$ARGS" ] && echo -e "\a")$*
@@ -135,7 +163,7 @@ set +f
 IFS=$(echo -e " \n\t")
 
 # Get the short options
-while getopts "hcrd" opt; do
+while getopts "hcrdp:" opt; do
 	case $opt in
 	h)
 		Help
@@ -150,6 +178,21 @@ while getopts "hcrd" opt; do
 	d)
 		DELETE=true
 		;;
+	p)
+		case $OPTARG in
+		q | s | d)
+			PRINT_LEVEL=$OPTARG
+			;;
+		-*)
+			err_msg "printCoqAssumptions: option '-p' requires an argument"
+			exit 1
+			;;
+		*)
+			err_msg "printCoqAssumptions: invalid argument '$OPTARG' for option '-p'"
+			exit 1
+			;;
+		esac
+		;;
 	\?)
 		err_msg "printCoqAssumptions: unrecognized option '-${OPTARG}'"
 		exit 1
@@ -159,7 +202,7 @@ done
 shift $((OPTIND - 1))
 
 # Get the script directory
-SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
+SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 # Input: Coq source file (e.g., MyFile.v)
 if [ $# -eq 0 ]; then
@@ -188,7 +231,7 @@ for arg in "$@"; do
 		if [ -f "$PRINTFILE" ]; then
 			temp_file=$(mktemp)
 			rm -f -- "$PRINTFILE" &
-			show_spinner $! "Cleaning $PRINTFILE..." "$temp_file"
+			show_spinner $! "$PRINT_LEVEL" "Cleaning $PRINTFILE..." "$temp_file"
 		fi
 	fi
 
@@ -196,7 +239,7 @@ for arg in "$@"; do
 	if [ "$RECOMPILE" = true ]; then
 		temp_file=$(mktemp)
 		coqc -Q . PLF "$arg" 1>/dev/null 2>"$temp_file" &
-		show_spinner $! "Recompiling $arg..." "$temp_file"
+		show_spinner $! "$PRINT_LEVEL" "Recompiling $arg..." "$temp_file"
 	fi
 
 	# Step 3: If $PRINTFILE does not exist, create it
@@ -205,7 +248,7 @@ for arg in "$@"; do
 	if [ ! -f "$PRINTFILE" ]; then
 		temp_file=$(mktemp)
 		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" 2>"$temp_file" &
-		show_spinner $! "Generating new assumption checking script for $COQFILE..." "$temp_file"
+		show_spinner $! "$PRINT_LEVEL" "Generating new assumption checking script for $COQFILE..." "$temp_file"
 	fi
 done
 
@@ -217,7 +260,25 @@ for arg in "$@"; do
 	echo
 	echo -e "\e[1mChecking assumptions for $COQFILE...\e[0m"
 	temp_file=$(mktemp)
-	coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file"
+	if [ "$PRINT_LEVEL" = "q" ]; then
+		coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
+	elif [ "$PRINT_LEVEL" = "s" ]; then
+		output=$(coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file" | (sed -n ' /^-----------.*-----------$/ {
+																																								N
+																																								/Closed under the global context/ d
+																																								p
+																																								b
+																																							}
+																																							p
+																																						'))
+		if [ -z "$output" ]; then
+			echo -e "[\e[1;32m✓\e[0m] Every theorem/lemma/example in $COQFILE is closed under the global context."
+		else
+			echo -e "$output"
+		fi
+	else
+		coqc -Q . PLF -color yes "$PRINTFILE" 2>"$temp_file"
+	fi
 	if [ $? -ne 0 ]; then
 		echo -e "\e[1;31mError: There are some errors while processing:\e[0m" >&2
 		echo -e "$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/       /')" >&2
@@ -225,15 +286,19 @@ for arg in "$@"; do
 		exit 2
 	fi
 	rm -f -- "$temp_file"
-	echo
+	if [ "$PRINT_LEVEL" != "q" ]; then
+		echo
+	fi
 
 	# Step 5: Remove the $PRINTFILE
 	if [ "$DELETE" = true ]; then
 		temp_file=$(mktemp)
 		rm -f -- "$PRINTFILE" "${PRINTFILE/.v/.vo}" "${PRINTFILE/.v/.glob}" "${PRINTFILE/.v/.vok}" "${PRINTFILE/.v/.vos}" &
-		show_spinner $! "Deleting assumption checking script and its auxiliary files for $COQFILE..." "$temp_file"
+		show_spinner $! "$PRINT_LEVEL" "Deleting assumption checking script and its auxiliary files for $COQFILE..." "$temp_file"
 	fi
 
-	echo -e "\e[1;32mDone!\e[0m"
+	if [ "$PRINT_LEVEL" != "q" ]; then
+		echo -e "\e[1;32mDone!\e[0m"
+	fi
 done
 exit 0
