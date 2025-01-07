@@ -62,6 +62,7 @@ strip_comments() {
 # Input: Coq source file (e.g., MyFile.v)
 COQFILE=$1
 OUTPUT="${1/.v/}_check_assumptions.v"
+COQDIR=$2
 
 # Step 1: Extract module names and their contexts
 module_stack=() # Stack to manage multi-level modules
@@ -111,7 +112,7 @@ fi
 # Step 2: Create a Coq script with Print Assumptions
 echo "(* Generated script to check assumptions *)" > "$OUTPUT"
 echo "From Coq Require Import String." >> "$OUTPUT"
-echo "From PLF Require Import ${1/.v/}." >> "$OUTPUT"
+echo "From $COQDIR Require Import ${1/.v/}." >> "$OUTPUT"
 echo "Set Printing Width 100." >> "$OUTPUT"
 echo "Ltac PT A :=" >> "$OUTPUT"
 echo "   idtac \"-----------\" A \"-----------\"." >> "$OUTPUT"
