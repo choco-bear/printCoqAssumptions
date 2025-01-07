@@ -24,7 +24,7 @@ The `printCoqAssumptions` utility is a tool to help Coq developers extract and a
 Run the script with the physical and logical path of the module and the Coq source files:
 
 ```bash
-printCoqAssumptions -crd . MyLib MyFile.v MySecondFile.v
+printCoqAssumptions -crdps -- -Q . MyLib -- MyFile.v MySecondFile.v
 ```
 Then, the assumptions used in the proofs will be printed in terminal.
 
@@ -60,7 +60,7 @@ Proof. apply I. Qed.
 
 ### Command:
 ```bash
-./printCoqAssumptions -cr . MyLib MyFile.v
+./printCoqAssumptions -crdps -- -- MyFile.v
 ```
 
 ### Output:
@@ -71,34 +71,12 @@ Proof. apply I. Qed.
 [✓] Generating new assumption checking script for MyFile.v...Done!
 
 Checking assumptions for MyFile.v...
------------ Outer.Thm1 -----------
-Closed under the global context
 ----------- Outer.Inner.Lem1 -----------
 Axioms:
 Outer.Inner.Lem1 : False -> False
------------ Ex1 -----------
-Closed under the global context
 
 [✓] Deleting assumption checking script and its auxiliary files for MyFile.v...Done!
 Done!
-```
-
-`MyFile_check_assumptions.v`
-```coq
-(* Generated script to check assumptions *)
-From Coq Require Import String.
-From PLF Require Import MyFile.
-Set Printing Width 100.
-Ltac PT A :=
-   idtac "-----------" A "-----------".
-Goal True.
-PT Outer.Thm1.
-Print Assumptions Outer.Thm1.
-PT Outer.Inner.Lem1.
-Print Assumptions Outer.Inner.Lem1.
-PT Ex1.
-Print Assumptions Ex1.
-Abort.
 ```
 
 ---

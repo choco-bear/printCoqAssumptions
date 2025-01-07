@@ -30,7 +30,7 @@ Syntax() {
 }
 
 Usage() {
-	echo "Usage: printCoqAssumptions [OPTION] [--] [PHYSICAL_DIR] [COQDIR] [COQFILE]..."
+	echo "Usage: printCoqAssumptions [OPTION] -- [COQOPTION] -- [COQFILE]..."
 }
 
 ExitStats() {
@@ -108,6 +108,18 @@ show_spinner() {
 		printf "\r[\033[1;32m✓\033[0m] %sDone!\n" "$message"
 	fi
 	rm -f "$temp_file" # Clean up the temporary file
+}
+
+gen_unique_string() {
+	local arr=$1
+	local base_string=$2
+	local new_string="$base_string"
+
+	while [[ " ${arr[@]} " =~ " ${unique_string} " ]]; do
+		new_string="$new_string$RANDOM"
+	done
+
+	echo "$new_string"
 }
 
 ############################################################
@@ -213,25 +225,56 @@ while getopts ":hcrdp:" opt; do
 done
 shift $((OPTIND - 1))
 
+# Get the coq options
+COQOPTION=()
+ARGS=""
+while true; do
+	[ $# -eq 0 ] && break
+	case $1 in
+	--)
+		IFS=$(echo -e "\a")
+		shift
+		ARGS=$ARGS$([ -n "$ARGS" ] && echo -e "\a")$*
+		break
+		;;
+	esac
+
+	COQOPTION+=("$1")
+	shift
+done
+IFS=$(echo -e "\a")
+set -f
+set -- $ARGS
+set +f
+IFS=$(echo -e " \n\t")
+
+# Debug: Print the arguments
+# echo "COQOPTION: ${COQOPTION[@]}"
+# echo "ARGS: $*"
+
 # Get the script directory
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
+
+# Directory arguments (e.g., PHYSICAL_DIR, COQDIR)
+if [[ "${COQOPTION[@]}" =~ -Q[[:space:]]\.[[:space:]]([a-zA-Z0-9_]+) ]]; then
+	PHYSICAL_DIR="."
+	COQDIR="${BASH_REMATCH[1]}"
+elif [[ "${COQOPTION[@]}" =~ -Q[[:space:]]$(pwd)[[:space:]]([a-zA-Z0-9_]+) ]]; then
+	PHYSICAL_DIR=$(pwd)
+	COQDIR="${BASH_REMATCH[1]}"
+else
+	PHYSICAL_DIR=$(pwd)
+	COQDIR="MyLib"
+	
+	while [[ " ${COQOPTION[@]} " =~ " $COQDIR " ]]; do
+		COQDIR="$COQDIR$RANDOM"
+	done
+fi
+COQOPTION+=("-Q" "$PHYSICAL_DIR" "$COQDIR")
 
 ############################################################
 # Check the input arguments. Add checks as needed.         #
 ############################################################
-# Input: Directory arguments (e.g., PHYSICAL_DIR, COQDIR)
-if [ $# -lt 2 ]; then
-	err_msg "printCoqAssumptions: missing directory operands"
-	exit 1
-fi
-PHYSICAL_DIR=$1
-COQDIR=$2
-if [ ! -d "$PHYSICAL_DIR" ]; then
-	err_msg "printCoqAssumptions: '$PHYSICAL_DIR' is not a directory"
-	exit 1
-fi
-shift 2
-
 # Input: Coq source file (e.g., MyFile.v)
 if [ $# -eq 0 ]; then
 	err_msg "printCoqAssumptions: missing file operand"
@@ -253,9 +296,11 @@ for arg in "$@"; do
 done
 
 for arg in "$@"; do
+	COQFILE=$arg
+	PRINTFILE="${arg/.v/}_check_assumptions.v"
+
 	# Step 1: If $CLEAN is true, clean the check_assumptions file
 	if [ "$CLEAN" = true ]; then
-		PRINTFILE="${arg/.v/}_check_assumptions.v"
 		if [ -f "$PRINTFILE" ]; then
 			temp_file=$(mktemp)
 			rm -f -- "$PRINTFILE" &
@@ -266,13 +311,11 @@ for arg in "$@"; do
 	# Step 2: Recompiling the Coq file
 	if [ "$RECOMPILE" = true ]; then
 		temp_file=$(mktemp)
-		coqc -Q "$PHYSICAL_DIR" "$COQDIR" "$arg" 1>/dev/null 2>"$temp_file" &
+		coqc "${COQOPTION[@]}" "$COQFILE" 1>/dev/null 2>"$temp_file" &
 		show_spinner $! "$PRINT_LEVEL" "Recompiling $arg..." "$temp_file"
 	fi
 
 	# Step 3: If $PRINTFILE does not exist, create it
-	COQFILE=$arg
-	PRINTFILE="${arg/.v/}_check_assumptions.v"
 	if [ ! -f "$PRINTFILE" ]; then
 		temp_file=$(mktemp)
 		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" "$COQDIR" 2>"$temp_file" &
@@ -290,10 +333,10 @@ for arg in "$@"; do
 	temp_file=$(mktemp)
 	ERRNO=0
 	if [ "$PRINT_LEVEL" = "q" ]; then
-		coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
+		coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
 		ERRNO=$?
 	elif [ "$PRINT_LEVEL" = "s" ]; then
-		output=$(coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file")
+		output=$(coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file")
 		ERRNO=$?
 		output=$(echo -e "$output" | (
 			sed -n ' /^-----------.*-----------$/ {
@@ -310,7 +353,7 @@ for arg in "$@"; do
 			echo -e "$output"
 		fi
 	else
-		coqc -Q "$PHYSICAL_DIR" "$COQDIR" -color yes "$PRINTFILE" 2>"$temp_file"
+		coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file"
 		ERRNO=$?
 	fi
 	if [ $ERRNO -ne 0 ]; then
