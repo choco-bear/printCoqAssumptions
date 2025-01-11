@@ -102,6 +102,7 @@ show_spinner() {
 		fi
 		echo -e "\e[1;31m    Error: There are some errors while processing:\e[0m" >&2
 		echo -e "\e[1;31m$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/           /')\e[0m" >&2
+		rm -f -- "$temp_file"
 		exit 2
 	fi
 	if [ "$print_level" != "q" ]; then
