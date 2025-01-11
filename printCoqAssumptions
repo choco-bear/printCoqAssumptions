@@ -373,7 +373,8 @@ for arg in "$@"; do
 	if [ ! -f "$PRINTFILE" ]; then
 		temp_file=$(mktemp)
 		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" "$COQDIR" 2>"$temp_file" &
-		show_spinner $! "$PRINT_LEVEL" "Generating new assumption checking script for $COQFILE..." "$temp_file" $TIMEOUT "Timeout while generating new assumption checking script for $COQFILE."
+		show_spinner $! "$PRINT_LEVEL" "Generating new assumption checking script for $COQFILE..." \
+			"$temp_file" $TIMEOUT "Timeout while generating new assumption checking script for $COQFILE."
 	fi
 done
 
@@ -429,7 +430,8 @@ for arg in "$@"; do
 	if [ "$DELETE" = true ]; then
 		temp_file=$(mktemp)
 		rm -f -- "$PRINTFILE" "${PRINTFILE/.v/.vo}" "${PRINTFILE/.v/.glob}" "${PRINTFILE/.v/.vok}" "${PRINTFILE/.v/.vos}" ".${PRINTFILE/.v/.aux}" &
-		show_spinner $! "$PRINT_LEVEL" "Deleting assumption checking script and its auxiliary files for $COQFILE..." "$temp_file" $TIMEOUT "Timeout while deleting assumption checking script and its auxiliary files for $COQFILE."
+		show_spinner $! "$PRINT_LEVEL" "Deleting assumption checking script and its auxiliary files for $COQFILE..." \
+			"$temp_file" $TIMEOUT "Timeout while deleting assumption checking script and its auxiliary files for $COQFILE."
 	fi
 
 	if [ "$PRINT_LEVEL" != "q" ]; then
