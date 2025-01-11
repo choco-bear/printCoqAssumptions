@@ -126,7 +126,7 @@ show_spinner() {
 			exit 124
 		else
 			# The guard process is still running, so the main process exited normally
-			kill -9 "$timeout_guard" 2>/dev/null
+			kill "$timeout_guard" 2>/dev/null
 		fi
 	fi
 
