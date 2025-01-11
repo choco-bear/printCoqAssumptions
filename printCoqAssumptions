@@ -6,25 +6,27 @@
 Syntax() {
 	# Display syntax
 	echo "Mandatory arguments to long options are mandatory for short options too."
-	echo "  -c, --clean                   Clean the check_assumptions file before"
-	echo "                                running the script. If you added some"
-	echo "                                theorems or lemmas to the file, you should"
-	echo "                                add this option."
-	echo "  -r, --recompile               Recompile the Coq file before running the"
-	echo "                                script. If you added some theorems or lemmas"
-	echo "                                to the file, you should add this option."
-	echo "  -d, --delete                  Delete the check_assumptions file after"
-	echo "                                running the script. If you don't want to"
-	echo "                                keep the file, you should add this option."
+	echo "  -c, --clean                   Clean the check_assumptions file before running"
+	echo "                                  the script. If you added some theorem or"
+	echo "                                  lemmas to the file, you should add this"
+	echo "                                  option."
+	echo "  -r, --recompile               Recompile the Coq file before running the script."
+	echo "                                  If you added some theorems or lemmas to the"
+	echo "                                  file, you should add this option."
+	echo "  -d, --delete                  Delete the check_assumptions file after running"
+	echo "                                  the script. If you don't want to keep the file,"
+	echo "                                  you should add this option."
 	echo "  -p, --print_level=PRINT_LEVEL"
-	echo "                                Set the level of the output. PRINT_LEVEL can"
-	echo "                                be one of the following:"
-	echo "                                  q: Quiet level. Prints nothing but errors."
-	echo "                                  s: Simplified level. Prints the assumptions"
-	echo "                                     in a simplified form, i.e., does not print"
-	echo "                                     the assumptions closed under the global"
-	echo "                                     context."
-	echo "                                  d: Default level."
+	echo "                                Set the level of the output. PRINT_LEVEL can be"
+	echo "                                  one of the following:"
+	echo "                                    q: Quiet level. Prints nothing but errors."
+	echo "                                    s: Simplified level. Prints the assumptions"
+	echo "                                       in a simplified form, i.e., does not"
+	echo "                                       print the assumptions closed under the"
+	echo "                                       global context."
+	echo "                                    d: Default level."
+	echo "  -t, --timeout=TIMEOUT         Set the timeout for each Coq file. The unit of"
+	echo "																  TIMEOUT is second. The default value is 10."
 	echo "  -h, --help                    Display this help and exit."
 	echo
 }
@@ -36,10 +38,10 @@ Usage() {
 ExitStats() {
 	# Display exit status
 	echo "Exit status:"
-	echo " 0  if OK,"
-	echo " 1  if there is an argument error"
-	echo " 2  if subcommand failed"
-	echo " 3  if there is an unexpected error"
+	echo " 0   if OK,"
+	echo " 1   if there is an argument error"
+	echo " 2   if subcommand failed"
+	echo " 124 if the subcommand is timed out"
 	echo
 }
 
@@ -64,6 +66,7 @@ CLEAN=false
 RECOMPILE=false
 DELETE=false
 PRINT_LEVEL="d"
+TIMEOUT=10
 
 # Helper functions
 err_msg() {
@@ -82,7 +85,23 @@ show_spinner() {
 	local delay=0.1
 	local spinner='|/-\' # Spinner characters
 	local temp_file=$4   # Temporary file to store error messages
+	local timeout=$5     # Timeout
+	local timeout_msg=$6 # Timeout message
 
+	# If a non-empty, non-zero timeout is provided, spawn a guard process
+	# that kills $pid after 'timeout' seconds if it's still running.
+	if [ -n "$timeout" ] && [ "$timeout" != "0" ]; then
+		(
+			# If 'sleep' completes and 'pid' is still alive, kill it.
+			sleep "$timeout"
+			if kill -0 "$pid" 2>/dev/null; then
+				kill "$pid" 2>/dev/null
+			fi
+		) &
+		local timeout_guard=$!
+	fi
+
+	# Display the spinner while the process is still running
 	while kill -0 "$pid" 2>/dev/null; do
 		for ((i = 0; i < ${#spinner}; i++)); do
 			if [ "$print_level" != "q" ]; then
@@ -95,6 +114,22 @@ show_spinner() {
 	# Check if the process exited with an error
 	wait "$pid"
 	local exit_code=$?
+
+	if [ -n "${timeout_guard:-}" ]; then
+		if ! kill -0 "$timeout_guard" 2>/dev/null; then
+			# The guard process has already exited, so the main process was killed by the guard
+			if [ "$print_level" != "q" ]; then
+				printf "\r[\033[1;31m✗\033[0m] \033[1;33m%s\033[0m\n" "$message"
+			fi
+			echo -e "\e[1;31m    Error: $timeout_msg\e[0m" >&2
+			rm -f -- "$temp_file"
+			exit 124
+		else
+			# The guard process is still running, so the main process exited normally
+			kill "$timeout_guard" 2>/dev/null
+		fi
+	fi
+
 	if [ $exit_code -ne 0 ]; then
 		# If there are errors, display them in red
 		if [ "$print_level" != "q" ]; then
@@ -102,12 +137,13 @@ show_spinner() {
 		fi
 		echo -e "\e[1;31m    Error: There are some errors while processing:\e[0m" >&2
 		echo -e "\e[1;31m$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/           /')\e[0m" >&2
+		rm -f -- "$temp_file"
 		exit 2
 	fi
 	if [ "$print_level" != "q" ]; then
 		printf "\r[\033[1;32m✓\033[0m] %sDone!\n" "$message"
 	fi
-	rm -f "$temp_file" # Clean up the temporary file
+	rm -f -- "$temp_file" # Clean up the temporary file
 }
 
 gen_unique_string() {
@@ -162,6 +198,16 @@ while true; do
 		err_msg "printCoqAssumptions: option '--print_level' requires an argument"
 		exit 1
 		;;
+	--timeout=*)
+		# nemeric check
+		if [[ ! ${1#--timeout=} =~ ^[0-9]+$ ]]; then
+			err_msg "printCoqAssumptions: invalid argument '${1#--timeout=}' for option '--timeout'. It should be a positive integer."
+			exit 1
+		fi
+		TIMEOUT=${1#--timeout=}
+		shift
+		continue
+		;;
 	--)
 		IFS=$(echo -e "\a")
 		ARGS=$ARGS$([ -n "$ARGS" ] && echo -e "\a")$*
@@ -183,7 +229,7 @@ set +f
 IFS=$(echo -e " \n\t")
 
 # Get the short options
-while getopts ":hcrdp:" opt; do
+while getopts ":hcrdp:t:" opt; do
 	case $opt in
 	h)
 		Help
@@ -212,6 +258,14 @@ while getopts ":hcrdp:" opt; do
 			exit 1
 			;;
 		esac
+		;;
+	t)
+		# nemeric check
+		if [[ ! $OPTARG =~ ^[0-9]+$ ]]; then
+			err_msg "printCoqAssumptions: invalid argument '$OPTARG' for option '-t'. It should be a positive integer."
+			exit 1
+		fi
+		TIMEOUT=$OPTARG
 		;;
 	:)
 		err_msg "printCoqAssumptions: option '-$OPTARG' requires an argument"
@@ -265,7 +319,7 @@ elif [[ "${COQOPTION[@]}" =~ -Q[[:space:]]$(pwd)[[:space:]]([a-zA-Z0-9_]+) ]]; t
 else
 	PHYSICAL_DIR=$(pwd)
 	COQDIR="MyLib"
-	
+
 	while [[ " ${COQOPTION[@]} " =~ " $COQDIR " ]]; do
 		COQDIR="$COQDIR$RANDOM"
 	done
@@ -304,7 +358,7 @@ for arg in "$@"; do
 		if [ -f "$PRINTFILE" ]; then
 			temp_file=$(mktemp)
 			rm -f -- "$PRINTFILE" &
-			show_spinner $! "$PRINT_LEVEL" "Cleaning $PRINTFILE..." "$temp_file"
+			show_spinner $! "$PRINT_LEVEL" "Cleaning $PRINTFILE..." "$temp_file" $TIMEOUT "Timeout while cleaning $PRINTFILE."
 		fi
 	fi
 
@@ -312,14 +366,14 @@ for arg in "$@"; do
 	if [ "$RECOMPILE" = true ]; then
 		temp_file=$(mktemp)
 		coqc "${COQOPTION[@]}" "$COQFILE" 1>/dev/null 2>"$temp_file" &
-		show_spinner $! "$PRINT_LEVEL" "Recompiling $arg..." "$temp_file"
+		show_spinner $! "$PRINT_LEVEL" "Recompiling $arg..." "$temp_file" $TIMEOUT "Timeout while recompiling $arg."
 	fi
 
 	# Step 3: If $PRINTFILE does not exist, create it
 	if [ ! -f "$PRINTFILE" ]; then
 		temp_file=$(mktemp)
 		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" "$COQDIR" 2>"$temp_file" &
-		show_spinner $! "$PRINT_LEVEL" "Generating new assumption checking script for $COQFILE..." "$temp_file"
+		show_spinner $! "$PRINT_LEVEL" "Generating new assumption checking script for $COQFILE..." "$temp_file" $TIMEOUT "Timeout while generating new assumption checking script for $COQFILE."
 	fi
 done
 
@@ -333,10 +387,10 @@ for arg in "$@"; do
 	temp_file=$(mktemp)
 	ERRNO=0
 	if [ "$PRINT_LEVEL" = "q" ]; then
-		coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
+		timeout "${TIMEOUT}s" coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file" 1>/dev/null
 		ERRNO=$?
 	elif [ "$PRINT_LEVEL" = "s" ]; then
-		output=$(coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file")
+		output=$(timeout "${TIMEOUT}s" coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file")
 		ERRNO=$?
 		output=$(echo -e "$output" | (
 			sed -n ' /^-----------.*-----------$/ {
@@ -346,17 +400,21 @@ for arg in "$@"; do
 									b
 								}
 								p
-							'))
+							'
+		))
 		if [ -z "$output" ]; then
 			echo -e "[\e[1;32m✓\e[0m] Every theorem/lemma/example in $COQFILE is closed under the global context."
 		else
 			echo -e "$output"
 		fi
 	else
-		coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file"
+		timeout "${TIMEOUT}s" coqc "${COQOPTION[@]}" -color yes "$PRINTFILE" 2>"$temp_file"
 		ERRNO=$?
 	fi
-	if [ $ERRNO -ne 0 ]; then
+	if [ $ERRNO -eq 124 ]; then
+		echo -e "\e[1;31mError: Timeout while checking assumptions for $COQFILE.\e[0m" >&2
+		exit 124
+	elif [ $ERRNO -ne 0 ]; then
 		echo -e "\e[1;31mError: There are some errors while processing:\e[0m" >&2
 		echo -e "$(cat "$temp_file" | sed -E 's/^Error: ?//' | sed 's/^/       /')" >&2
 		rm -f -- "$temp_file"
@@ -371,7 +429,7 @@ for arg in "$@"; do
 	if [ "$DELETE" = true ]; then
 		temp_file=$(mktemp)
 		rm -f -- "$PRINTFILE" "${PRINTFILE/.v/.vo}" "${PRINTFILE/.v/.glob}" "${PRINTFILE/.v/.vok}" "${PRINTFILE/.v/.vos}" ".${PRINTFILE/.v/.aux}" &
-		show_spinner $! "$PRINT_LEVEL" "Deleting assumption checking script and its auxiliary files for $COQFILE..." "$temp_file"
+		show_spinner $! "$PRINT_LEVEL" "Deleting assumption checking script and its auxiliary files for $COQFILE..." "$temp_file" $TIMEOUT "Timeout while deleting assumption checking script and its auxiliary files for $COQFILE."
 	fi
 
 	if [ "$PRINT_LEVEL" != "q" ]; then
