@@ -357,7 +357,7 @@ for arg in "$@"; do
 	if [ "$CLEAN" = true ]; then
 		if [ -f "$PRINTFILE" ]; then
 			temp_file=$(mktemp)
-			rm -f -- "$PRINTFILE" &
+			rm -f -- "$PRINTFILE" 2>"$temp_file" &
 			show_spinner $! "$PRINT_LEVEL" "Cleaning $PRINTFILE..." "$temp_file" $TIMEOUT "Timeout while cleaning $PRINTFILE."
 		fi
 	fi
