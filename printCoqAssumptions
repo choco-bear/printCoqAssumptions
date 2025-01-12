@@ -27,6 +27,9 @@ Syntax() {
 	echo "                                    d: Default level."
 	echo "  -t, --timeout=TIMEOUT         Set the timeout for each Coq file. The unit of"
 	echo "																  TIMEOUT is second. The default value is 10."
+	echo "      --fresh_name              Use a fresh name for the assumption checking"
+	echo "                                  script. If you want to keep the old script,"
+	echo "                                  you should add this option."
 	echo "  -h, --help                    Display this help and exit."
 	echo
 }
@@ -67,6 +70,7 @@ RECOMPILE=false
 DELETE=false
 PRINT_LEVEL="d"
 TIMEOUT=10
+FRESH_NAME=false
 
 # Helper functions
 err_msg() {
@@ -205,6 +209,11 @@ while true; do
 			exit 1
 		fi
 		TIMEOUT=${1#--timeout=}
+		shift
+		continue
+		;;
+	--fresh)
+		FRESH_NAME=true
 		shift
 		continue
 		;;
@@ -352,6 +361,16 @@ done
 for arg in "$@"; do
 	COQFILE=$arg
 	PRINTFILE="${arg/.v/}_check_assumptions.v"
+	
+	# Step 0: Check if the PRINTFILE already exists
+	if [ "$FRESH_NAME" = true ]; then
+		while [ -f "$PRINTFILE" ]; do
+			PRINTFILE="${PRINTFILE/.v/}$RANDOM.v"
+		done
+		print_warning "The file '${arg/.v/}_check_assumptions.v' already exists. So a fresh name '$PRINTFILE' will be used."
+	elif [ -f "$PRINTFILE" ]; then
+		print_warning "The file $PRINTFILE already exists. It will be overwritten."
+	fi
 
 	# Step 1: If $CLEAN is true, clean the check_assumptions file
 	if [ "$CLEAN" = true ]; then
