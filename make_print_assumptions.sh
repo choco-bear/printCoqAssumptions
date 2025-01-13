@@ -61,8 +61,8 @@ strip_comments() {
 #################################################
 # Input: Coq source file (e.g., MyFile.v)
 COQFILE=$1
-OUTPUT="${1/.v/}_check_assumptions.v"
 COQDIR=$2
+OUTPUT=$3
 
 # Step 1: Extract module names and their contexts
 module_stack=() # Stack to manage multi-level modules
