@@ -379,8 +379,8 @@ for arg in "$@"; do
 	if [ "$FRESH_NAME" = true ]; then
 		while [ -f "$PRINTFILE" ]; do
 			PRINTFILE="${PRINTFILE/.v/}$RANDOM.v"
+			print_warning "The file '${arg/.v/}_check_assumptions.v' already exists. So a fresh name '$PRINTFILE' will be used."
 		done
-		print_warning "The file '${arg/.v/}_check_assumptions.v' already exists. So a fresh name '$PRINTFILE' will be used."
 	elif [ -f "$PRINTFILE" ]; then
 		print_warning "The file $PRINTFILE already exists. It will be overwritten."
 	fi
