@@ -396,7 +396,7 @@ for arg in "$@"; do
 	# Step 3: If $PRINTFILE does not exist, create it
 	if [ ! -f "$PRINTFILE" ]; then
 		temp_file=$(mktemp)
-		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" "$COQDIR" 2>"$temp_file" &
+		"$SCRIPT_DIR/make_print_assumptions.sh" "$COQFILE" "$COQDIR" "$PRINTFILE" 2>"$temp_file" &
 		show_spinner $! "$PRINT_LEVEL" "Generating new assumption checking script for $COQFILE..." \
 			"$temp_file" $TIMEOUT "Timeout while generating new assumption checking script for $COQFILE."
 	fi
