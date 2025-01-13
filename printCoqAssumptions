@@ -428,7 +428,9 @@ for arg in "$@"; do
 							'
 		))
 		if [ -z "$output" ]; then
-			echo -e "[\e[1;32m✓\e[0m] Every theorem/lemma/example in $COQFILE is closed under the global context."
+			if [ $ERRNO -eq 0 ]; then
+				echo -e "[\e[1;32m✓\e[0m] Every theorem/lemma/example in $COQFILE is closed under the global context."
+			fi
 		else
 			echo -e "$output"
 		fi
