@@ -358,11 +358,21 @@ for arg in "$@"; do
 	fi
 done
 
+declare -A PRINTFILE_MAP
 for arg in "$@"; do
 	COQFILE=$arg
 	PRINTFILE="${arg/.v/}_check_assumptions.v"
-	
-	# Step 0: Check if the PRINTFILE already exists
+
+	# Step 0: If $CLEAN is true, clean the check_assumptions file
+	if [ "$CLEAN" = true ]; then
+		if [ -f "$PRINTFILE" ]; then
+			temp_file=$(mktemp)
+			rm -f -- "$PRINTFILE" 2>"$temp_file" &
+			show_spinner $! "$PRINT_LEVEL" "Cleaning $PRINTFILE..." "$temp_file" $TIMEOUT "Timeout while cleaning $PRINTFILE."
+		fi
+	fi
+
+	# Step 1: Check if the PRINTFILE already exists
 	if [ "$FRESH_NAME" = true ]; then
 		while [ -f "$PRINTFILE" ]; do
 			PRINTFILE="${PRINTFILE/.v/}$RANDOM.v"
@@ -371,15 +381,7 @@ for arg in "$@"; do
 	elif [ -f "$PRINTFILE" ]; then
 		print_warning "The file $PRINTFILE already exists. It will be overwritten."
 	fi
-
-	# Step 1: If $CLEAN is true, clean the check_assumptions file
-	if [ "$CLEAN" = true ]; then
-		if [ -f "$PRINTFILE" ]; then
-			temp_file=$(mktemp)
-			rm -f -- "$PRINTFILE" 2>"$temp_file" &
-			show_spinner $! "$PRINT_LEVEL" "Cleaning $PRINTFILE..." "$temp_file" $TIMEOUT "Timeout while cleaning $PRINTFILE."
-		fi
-	fi
+	PRINTFILE_MAP["$arg"]="$PRINTFILE"
 
 	# Step 2: Recompiling the Coq file
 	if [ "$RECOMPILE" = true ]; then
@@ -399,7 +401,7 @@ done
 
 for arg in "$@"; do
 	COQFILE=$arg
-	PRINTFILE="${arg/.v/}_check_assumptions.v"
+	PRINTFILE=${PRINTFILE_MAP["$arg"]}
 
 	# Step 4: Run Coq on $PRINTFILE
 	echo
